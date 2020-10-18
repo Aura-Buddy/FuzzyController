@@ -1,0 +1,167 @@
+"""
+
+Test 1:
+Lets just tests the cold conditions to see if they do what they are supposed to
+do
+
+"""
+import skfuzzy as fuzz
+import numpy as np
+import matplotlib.pyplot as plt
+import serial
+import time
+
+def FuzzyController(Temperature_value, Humidity_value):
+    ser = serial.Serial('/dev/cu.usbmodem14201', 9600)
+    
+    temperature = np.arange(0,101,1)
+    humidity = np.arange(0,101,1)
+    response = np.arange(0,101,1)
+
+    #Temperature Ranges 
+    cold_temp = fuzz.trimf(temperature, [0,4,8])
+    """ Just testing out cold for now
+    cool_temp = fuzz.trimf(temperature,[7,15,20])
+    room_temp = fuzz.trimf(temperature,[19,22,25])
+    elevated_room_temp = fuzz.trimf(temperature, [24,27,30])
+    warm_temp = fuzz.trimf(temperature, [29,35,40])
+    excessively_warm_temp = fuzz.trimf(temperature, [39,70,100])
+    """
+    
+    #Humidity Ranges
+    very_low_humidity = fuzz.trimf(humidity, [0, 8, 15])
+    low_humidity = fuzz.trimf(humidity, [14,25,30])
+    comfortable_humidity = fuzz.trimf(humidity, [29,40,50])
+    elevated_humidity = fuzz.trimf(humidity, [49,58,65])
+    excessively_elevated_humidity = fuzz.trimf(humidity,[64,80,100])
+
+    #Revised fuzzy membership functions for response
+    fan_lower_threshold = fuzz.trimf(response, [0,25,50])
+    fan_varied = fuzz.trimf(response, [50, 55, 80])
+    fan_upper_threshold = fuzz.trimf(response, [80, 100, 100])
+
+    fig,(ax0,ax1,ax2) = plt.subplots(nrows= 3, figsize= (8,9))
+
+    ax0.plot(temperature, cold_temp, 'b', linewidth=1.5, label='Cold')
+    ax0.set_title('Temperature Range')
+    ax0.legend()
+
+    ax1.plot(humidity, very_low_humidity, 'r', linewidth=1.5, label='Very Dry')
+    ax1.plot(humidity, low_humidity, 'm', linewidth=1.5, label='Dry')
+    ax1.plot(humidity, comfortable_humidity, 'g', linewidth=1.5, label='Comfortable')
+    ax1.plot(humidity, elevated_humidity, 'c', linewidth=1.5, label='Moist')
+    ax1.plot(humidity, excessively_elevated_humidity, 'b', linewidth=1.5,label='Very Moist' )
+    ax1.set_title('Humidity Range')
+    ax1.legend()
+
+    #Revised plot of response membership functions
+    ax2.plot(response, fan_lower_threshold, 'b', linewidth=1.5, label = 'Water Accumulation')
+    ax2.plot(response, fan_varied, 'g', linewidth=1.5, label = 'Temperature Increasing')
+    ax2.plot(response, fan_upper_threshold, 'r', linewidth=1.5, label = 'Heat Accumulation')
+    ax2.set_title('Fan Speed')
+    ax2.legend()
+
+    for ax in (ax0, ax1, ax2):
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.get_xaxis().tick_bottom()
+        ax.get_yaxis().tick_left()
+
+    plt.tight_layout()
+
+    temperature_value = Temperature_value
+    humidity_value = Humidity_value
+    print("temperature", temperature_value, "humidity", humidity_value)
+
+    cold_temp_level = fuzz.interp_membership(temperature, cold_temp, temperature_value)
+
+    very_low_humidity_level = fuzz.interp_membership(humidity, very_low_humidity, humidity_value)
+    low_humidity_level = fuzz.interp_membership(humidity, low_humidity, humidity_value)
+    comfortable_humidity_level = fuzz.interp_membership(humidity, comfortable_humidity, humidity_value)
+    elevated_humidity_level = fuzz.interp_membership(humidity, elevated_humidity, humidity_value)
+    excessively_elevated_humidity_level = fuzz.interp_membership(humidity, excessively_elevated_humidity, humidity_value)
+    
+    
+    #Trial rule 1 for If its Cold AND Very Humid Then turn fan on LOW
+    active_rule_1 = np.fmax(cold_temp_level, excessively_elevated_humidity_level)
+    #Trial rule 2 for If its Cold AND Humid Then turn fan on LOW
+    active_rule_2 = np.fmax(cold_temp_level, elevated_humidity_level)
+
+    variance1 = np.fmax(fan_lower_threshold, fan_varied)
+    fan_low_activation_1 = np.fmax(active_rule_1, variance1)
+    fan0 = np.zeros_like(response)
+
+    fig, ax0 = plt.subplots(figsize=(8, 3))
+
+    ax0.fill_between(response, fan0, fan_low_activation_1, facecolor='b', alpha=0.7)
+
+    ax0.plot(response, fan_lower_threshold, 'b', linewidth=0.5, linestyle='--', )
+
+    ax0.plot(response, fan_varied, 'g', linewidth=0.5, linestyle='--')
+
+    ax0.plot(response, fan_upper_threshold, 'r', linewidth=0.5, linestyle='--')
+    ax0.set_title('Output membership activity')
+    for ax in (ax0,):
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.get_xaxis().tick_bottom()
+        ax.get_yaxis().tick_left()
+
+    plt.tight_layout()
+
+    try:
+        aggregated = fan_low_activation_1
+   
+        output = fuzz.defuzz(response, aggregated, 'centroid')
+        output_activation = fuzz.interp_membership(response, aggregated, output)  # for plot
+        print("output = ", output_activation)
+
+    # Visualize this
+        fig, ax0 = plt.subplots(figsize=(8, 3))
+
+        ax0.plot(response, fan_lower_threshold, 'b', linewidth=0.5, linestyle='--', )
+        ax0.plot(response, fan_varied, 'b', linewidth=0.5, linestyle='--', )
+        ax0.plot(response, fan_upper_threshold, 'r', linewidth=0.5, linestyle='--')
+
+        ax0.fill_between(response, fan0, aggregated, facecolor='Orange', alpha=0.7)
+        ax0.plot([output, output], [0, output_activation], 'k', linewidth=1.5, alpha=0.9)
+        ax0.set_title('Aggregated membership and result (line)')
+
+    # Turn off top/right axes
+        for ax in (ax0,):
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.get_xaxis().tick_bottom()
+            ax.get_yaxis().tick_left()
+
+        plt.tight_layout()
+    
+    except AssertionError:
+        print("Rule not defined, temperature and humidity are within tolerable ranges")
+        output = 0.0
+        print("output = ", output)
+
+    if output == 1.00:
+        output = output - 0.01
+
+    print('fan should be running at ', output, '%')
+    FloattoString = str(output)
+    ser.write(bytearray(FloattoString.encode()))
+    
+    plt.show()
+    time.sleep(5)
+    plt.close()
+
+def main():
+    t_value = [23, 54, 12, 6, 32, 76, 23, 76, 25, 0]
+    h_value = [43, 75, 8, 23, 62, 37, 29, 86, 55, 17]
+
+    for i in range(10):
+        print("Trial", [i+1], ":")
+        FuzzyController(t_value[i], h_value[i])
+        print("\n")
+    
+
+main()
+
+    
